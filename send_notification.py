@@ -61,4 +61,37 @@ def send_courier_email(new_cameras, recipients):
             if response.status_code == 202:
                 print(f"✓ Email queued successfully for {recipient}")
             else:
-                print(f"✗ Failed to sen
+                print(f"✗ Failed to send to {recipient}: {response.status_code}")
+                print(f"Response: {response.text}")
+                
+        except Exception as e:
+            print(f"✗ Error sending to {recipient}: {e}")
+            return False
+    
+    return True
+
+def main():
+    # Read new cameras from file
+    new_cameras = []
+    if os.path.exists('new_cameras.txt'):
+        with open('new_cameras.txt', 'r') as f:
+            new_cameras = [line.strip() for line in f if line.strip()]
+    
+    if not new_cameras:
+        print("No new cameras to report")
+        return
+    
+    # Get recipients from environment variable
+    recipients_str = os.environ.get('EMAIL_RECIPIENTS', '')
+    if not recipients_str:
+        print("Error: EMAIL_RECIPIENTS not found")
+        return
+    
+    recipients = [r.strip() for r in recipients_str.split(',')]
+    
+    # Send emails
+    print(f"Sending notification for {len(new_cameras)} new cameras to {len(recipients)} recipient(s)")
+    send_courier_email(new_cameras, recipients)
+
+if __name__ == "__main__":
+    main()
