@@ -1,0 +1,48 @@
+name: B&H Camera Monitor
+
+on:
+  schedule:
+    # Runs at 9 AM EST every day (2 PM UTC)
+    - cron: '0 14 * * *'
+  workflow_dispatch:  # Allows manual triggering for testing
+
+jobs:
+  check-cameras:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        persist-credentials: true
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4
+    
+    - name: Run camera scraper
+      run: python scraper.py
+    
+    - name: Send notification if new cameras found
+      env:
+        COURIER_API_KEY: ${{ secrets.COURIER_API_KEY }}
+        EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+      run: |
+        if [ -s new_cameras.txt ]; then
+          python send_notification.py
+        else
+          echo "No new cameras found - skipping notification"
+        fi
+    
+    - name: Commit and push camera database
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/cameras.json || true
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update camera database [skip ci]" && git push)
