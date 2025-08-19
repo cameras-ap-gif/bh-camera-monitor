@@ -19,7 +19,6 @@ def save_cameras(camera_data):
 
 def scrape_bh_cameras():
     """Scrape B&H Photo using ScraperAPI"""
-    # IMPORTANT: This should NOT be the B&H URL directly!
     bh_url = "https://www.bhphotovideo.com/c/products/Digital-Cameras/ci/9811/N/4288586282?sort=NEWEST"
     
     # Get ScraperAPI key
@@ -27,98 +26,126 @@ def scrape_bh_cameras():
     
     if not api_key:
         print("ERROR: SCRAPER_API_KEY not found!")
-        print("Attempting direct request (will likely fail)...")
-        # This is what's happening - it's falling back to direct request
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        try:
-            response = requests.get(bh_url, headers=headers)
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            print(f"Error scraping: {e}")
-            return []
-    else:
-        print(f"✓ ScraperAPI key found: {api_key[:10]}...")
-        
-        # Use ScraperAPI endpoint - NOT the B&H URL directly!
-        SCRAPER_API_ENDPOINT = 'http://api.scraperapi.com'
-        
-        params = {
-            'api_key': api_key,
-            'url': bh_url,
-            'render': 'true',  # Enable JavaScript rendering
-            'country_code': 'us'
-        }
-        
-        print(f"Calling ScraperAPI endpoint: {SCRAPER_API_ENDPOINT}")
-        print(f"Target URL: {bh_url}")
-        
-        try:
-            response = requests.get(SCRAPER_API_ENDPOINT, params=params, timeout=60)
-            print(f"ScraperAPI Response Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                print("✓ Successfully retrieved page via ScraperAPI")
-                # Parse the HTML
-                soup = BeautifulSoup(response.text, 'html.parser')
-                cameras_found = []
-                
-                # Look for camera names in h3 tags
-                for h3 in soup.find_all('h3'):
-                    text = h3.get_text(strip=True)
-                    if any(brand in text for brand in ['Sony', 'Canon', 'Nikon', 'FUJIFILM', 'Panasonic', 'Leica']):
-                        if 'Camera' in text or 'Mirrorless' in text or 'DSLR' in text:
-                            # Clean the text
-                            text = text.replace('Key Features', '').strip()
-                            if text and len(text) > 10:
-                                cameras_found.append(text)
-                
-                # Remove duplicates
-                cameras_found = list(set(cameras_found))
-                print(f"Found {len(cameras_found)} unique cameras")
-                return cameras_found
-            else:
-                print(f"ScraperAPI error: Status {response.status_code}")
-                print(f"Response: {response.text[:500]}")
-                return []
-                
-        except Exception as e:
-            print(f"Exception calling ScraperAPI: {e}")
-            return []
+        return []
     
-    return []
+    print(f"✓ Using ScraperAPI (key: {api_key[:10]}...)")
+    
+    # ScraperAPI endpoint - this is what we call, NOT B&H directly
+    params = {
+        'api_key': api_key,
+        'url': bh_url,
+        'render': 'true',
+        'country_code': 'us'
+    }
+    
+    try:
+        print("Fetching page via ScraperAPI...")
+        response = requests.get('http://api.scraperapi.com', params=params, timeout=60)
+        
+        print(f"Response status: {response.status_code}")
+        print(f"Response size: {len(response.text)} characters")
+        
+        if response.status_code != 200:
+            print(f"Error: ScraperAPI returned status {response.status_code}")
+            return []
+        
+        # Parse the HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
+        cameras_found = []
+        
+        # Method 1: Find all h3 tags (product titles on B&H)
+        h3_count = 0
+        for h3 in soup.find_all('h3'):
+            h3_count += 1
+            text = h3.get_text(strip=True)
+            
+            # Check if it's a camera product
+            camera_brands = ['Sony', 'Canon', 'Nikon', 'FUJIFILM', 'Panasonic', 'OM SYSTEM', 
+                           'Leica', 'Hasselblad', 'Pentax', 'Ricoh', 'Sigma', 'Olympus',
+                           'GoPro', 'DJI', 'Insta360', 'Kodak', 'Polaroid']
+            
+            # Check if text contains a camera brand
+            has_brand = any(brand.lower() in text.lower() for brand in camera_brands)
+            
+            # Check for camera-related keywords
+            camera_keywords = ['camera', 'mirrorless', 'dslr', 'digital', 'body', 'lens', 'kit']
+            has_keyword = any(keyword in text.lower() for keyword in camera_keywords)
+            
+            # If it looks like a camera product name
+            if has_brand and (has_keyword or 'mm' in text.lower()):
+                # Clean up the text
+                clean_text = text.replace('Key Features', '').strip()
+                clean_text = clean_text.replace('Show More', '').strip()
+                
+                # Avoid duplicates and ensure it's substantial
+                if clean_text and len(clean_text) > 15 and clean_text not in cameras_found:
+                    cameras_found.append(clean_text)
+                    print(f"  Found: {clean_text[:60]}...")
+        
+        print(f"Scanned {h3_count} h3 tags")
+        
+        # Method 2: Also check data-selenium attributes
+        selenium_items = soup.find_all(attrs={'data-selenium': 'miniProductPageProductName'})
+        for item in selenium_items:
+            text = item.get_text(strip=True)
+            if text and len(text) > 15 and text not in cameras_found:
+                # Apply same brand/keyword checks
+                has_brand = any(brand.lower() in text.lower() for brand in camera_brands)
+                if has_brand:
+                    cameras_found.append(text)
+        
+        print(f"✓ Found {len(cameras_found)} unique cameras")
+        return cameras_found
+        
+    except requests.exceptions.Timeout:
+        print("Error: Request timed out (60 seconds)")
+        return []
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
 
 def find_new_cameras(current_cameras, existing_data):
     """Identify cameras that are truly new (never seen before)"""
     all_previous_cameras = set(existing_data.get('cameras', []))
     current_set = set(current_cameras)
     
+    # Find cameras that have never been seen before
     new_cameras = current_set - all_previous_cameras
+    
+    # Update the master list with ALL cameras we've ever seen
     all_cameras = list(all_previous_cameras | current_set)
     
     return list(new_cameras), all_cameras
 
 def main():
-    print(f"Starting camera check at {datetime.now()}")
-    print("-" * 50)
+    print("=" * 60)
+    print(f"B&H Camera Monitor - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
     
-    # Check environment
-    api_key = os.environ.get('SCRAPER_API_KEY')
-    if api_key:
-        print(f"✓ SCRAPER_API_KEY is set (starts with: {api_key[:10]}...)")
+    # Verify environment
+    if os.environ.get('SCRAPER_API_KEY'):
+        print("✓ SCRAPER_API_KEY is configured")
     else:
-        print("✗ SCRAPER_API_KEY is NOT set")
+        print("✗ SCRAPER_API_KEY is missing!")
+        return
     
     # Load existing data
     existing_data = load_existing_cameras()
+    previous_count = len(existing_data.get('cameras', []))
+    print(f"Previously tracked cameras: {previous_count}")
     
     # Scrape current cameras
+    print("\nScraping B&H Photo...")
     current_cameras = scrape_bh_cameras()
-    print(f"Found {len(current_cameras)} cameras currently listed")
     
     if not current_cameras:
-        print("Warning: No cameras found. Site structure might have changed.")
+        print("\n⚠️  No cameras found - scraping may have failed")
+        # Don't update database if scraping failed
         open('new_cameras.txt', 'w').close()
         return
+    
+    print(f"\n📊 Summary:")
+    print(f"  - Cameras found on page: {len(current_cameras)}")
     
     # Find new cameras
     new_cameras, all_cameras = find_new_cameras(current_cameras, existing_data)
@@ -131,16 +158,22 @@ def main():
     }
     save_cameras(camera_data)
     
+    print(f"  - Total cameras in database: {len(all_cameras)}")
+    print(f"  - New cameras detected: {len(new_cameras)}")
+    
     # Save new cameras for email notification
     if new_cameras:
-        print(f"Found {len(new_cameras)} NEW cameras!")
+        print(f"\n🎉 NEW CAMERAS FOUND:")
         with open('new_cameras.txt', 'w') as f:
             for camera in new_cameras:
                 f.write(f"{camera}\n")
-                print(f"  - {camera}")
+                print(f"  • {camera}")
     else:
-        print("No new cameras found since last check")
+        print("\n✓ No new cameras since last check")
         open('new_cameras.txt', 'w').close()
+    
+    print("\n" + "=" * 60)
+    print("Check complete!")
 
 if __name__ == "__main__":
     main()
