@@ -1,0 +1,26 @@
+name: Test ScraperAPI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install requests
+      run: pip install requests beautifulsoup4
+    
+    - name: Run ScraperAPI Test
+      env:
+        SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+      run: |
+        echo "Environment variables:"
+        echo "SCRAPER_API_KEY is set: ${{ secrets.SCRAPER_API_KEY != '' }}"
+        python test_scraper.py
