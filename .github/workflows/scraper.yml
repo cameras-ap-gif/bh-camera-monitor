@@ -2,9 +2,8 @@ name: B&H Camera Monitor
 
 on:
   schedule:
-    # Runs at 9 AM EST every day (2 PM UTC)
     - cron: '0 14 * * *'
-  workflow_dispatch:  # Allows manual triggering for testing
+  workflow_dispatch:
 
 jobs:
   check-cameras:
@@ -26,13 +25,6 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
-    
-    - name: Test ScraperAPI Connection
-      env:
-        SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
-      run: |
-        echo "Testing ScraperAPI setup..."
-        python test_scraper.py
     
     - name: Run camera scraper
       env:
@@ -67,12 +59,10 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         
-        # Add the cameras database if it exists
         if [ -f data/cameras.json ]; then
           git add data/cameras.json
         fi
         
-        # Check if there are changes to commit
         if git diff --staged --quiet; then
           echo "No changes to commit"
         else
@@ -89,26 +79,3 @@ jobs:
           new_cameras.txt
           data/cameras.json
         retention-days: 7
-    
-    - name: Summary
-      if: always()
-      run: |
-        echo "## Scraper Run Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Run time:** $(date)" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        
-        if [ -f data/cameras.json ]; then
-          total=$(python -c "import json; data=json.load(open('data/cameras.json')); print(len(data.get('cameras', [])))")
-          echo "**Total cameras tracked:** $total" >> $GITHUB_STEP_SUMMARY
-        fi
-        
-        if [ -s new_cameras.txt ]; then
-          new_count=$(wc -l < new_cameras.txt)
-          echo "**New cameras found:** $new_count" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### New Cameras:" >> $GITHUB_STEP_SUMMARY
-          cat new_cameras.txt >> $GITHUB_STEP_SUMMARY
-        else
-          echo "**New cameras found:** 0" >> $GITHUB_STEP_SUMMARY
-        fi
